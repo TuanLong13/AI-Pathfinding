@@ -74,7 +74,10 @@ class PygameAIEnv(gym.Env):
             reward -= 20
         else:
             self.blocked = False
-            reward += 10
+            if distance_to_goal > 100:
+                reward += 10
+            else:
+                reward += 20
 
 
         done = False

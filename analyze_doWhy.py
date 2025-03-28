@@ -1,11 +1,14 @@
 import pandas as pd
-from dowhy import CausalModel
+import seaborn as sns
+from dowhy import CausalModel, plotter
 import matplotlib.pyplot as plt
 
 # Đọc dữ liệu từ file game_data.csv
 df = pd.read_csv("game_data.csv")
-print("Dữ liệu đầu vào:")
-print(df.head())
+
+# Thêm cột Action_next (Action của bước tiếp theo)
+df['Next_Action'] = df['Action'].shift(-1)  # Dịch Action lên 1 bước
+df = df.dropna()  # Loại bỏ hàng cuối cùng bị NaN do shift
 
 # Bước 1: Xây dựng mô hình nhân quả
 # Định nghĩa các biến:
@@ -13,7 +16,8 @@ print(df.head())
 # - Blocked: Trạng thái bị chặn (0: không, 1: có)
 # - Distance: Khoảng cách tới mục tiêu
 # - Reward: Phần thưởng nhận được
-# Giả định: Action ảnh hưởng đến Blocked và Distance, từ đó ảnh hưởng đến Reward
+# - Next_Action: Action tiếp theo của AI
+# Giả định: Action ảnh hưởng đến Blocked và Distance, từ đó ảnh hưởng đến Reward dẫn đến Next_Action
 
 # Tạo biểu đồ nhân quả (Causal Graph) dưới dạng GML
 causal_graph = """
@@ -22,14 +26,16 @@ digraph {
     Action -> Distance;
     Blocked -> Reward;
     Distance -> Reward;
+    Reward -> Next_Action
 }
 """
 
 # Khởi tạo mô hình nhân quả với doWhy
 model = CausalModel(
     data=df,
-    treatment="Action",  # Biến điều trị (Treatment) - Hành động của AI
-    outcome="Reward",   # Biến kết quả (Outcome) - Phần thưởng
+    treatment="Reward",  # Biến điều trị (Treatment) - Phần thưởng
+    outcome="Next_Action",   # Biến kết quả (Outcome) - Hành động tiếp theo
+    common_causes=["Distance", "Blocked"],  # Biến nhiễu (Comfounders) - Khoảng cách và trạng thái bị chặn
     graph=causal_graph
 )
 
@@ -52,6 +58,9 @@ causal_estimate = model.estimate_effect(
 print("Ước lượng hiệu ứng nhân quả:")
 print(causal_estimate)
 
+# Vẽ đồ thị tác động nhân quả bằng DoWhy plotter
+plotter.plot_causal_effect(causal_estimate, df["Reward"], df["Next_Action"])
+
 # Bước 4: Kiểm tra độ bền của kết quả (Refutation)
 # Sử dụng phương pháp thêm nhiễu ngẫu nhiên để kiểm tra tính mạnh mẽ của mô hình
 refute_results = model.refute_estimate(
@@ -64,6 +73,7 @@ print("Kết quả kiểm tra độ bền:")
 print(refute_results)
 
 # Bước 5: Phân tích và trực quan hóa kết quả
+
 # Vẽ biểu đồ thể hiện mối quan hệ giữa Action và Reward
 plt.figure(figsize=(10, 6))
 for action in df["Action"].unique():
@@ -72,6 +82,18 @@ for action in df["Action"].unique():
 plt.xlabel("Distance to Goal")
 plt.ylabel("Reward")
 plt.title("Reward vs Distance for Different Actions")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Vẽ biểu đồ giữa Reward và Next_Action
+plt.figure(figsize=(10, 6))
+for action in df["Next_Action"].unique():
+    subset = df[df["Next_Action"] == action]
+    plt.scatter(subset["Distance"], subset["Reward"], label=f"Action {action}", alpha=0.5)
+plt.xlabel("Distance to Goal")
+plt.ylabel("Reward")
+plt.title("Reward vs Distance for Next Actions")
 plt.legend()
 plt.grid(True)
 plt.show()
@@ -95,7 +117,7 @@ blocked_counts = df.groupby(['Action', 'Blocked']).size().unstack(fill_value=0)
 blocked_counts.columns = ['Not Blocked', 'Blocked']
 
 # In kết quả thống kê để kiểm tra
-print("Số lần Blocked cho mỗi Action:")
+print("Số lần Blocked với mỗi Action:")
 print(blocked_counts)
 
 # Vẽ biểu đồ cột
@@ -104,7 +126,7 @@ blocked_counts.plot(kind='bar', stacked=False, figsize=(10, 6), color=['blue', '
 # Tùy chỉnh biểu đồ
 plt.title("Số lần Blocked theo mỗi Action", fontsize=14)
 plt.xlabel("Action (0: Lên, 1: Xuống, 2: Trái, 3: Phải)", fontsize=12)
-plt.ylabel("Số lần xuất hiện", fontsize=12)
+plt.ylabel("Số lần bị chặn", fontsize=12)
 plt.legend(title="Trạng thái Blocked")
 plt.grid(True, linestyle='--', alpha=0.7)
 plt.xticks(rotation=0)  # Giữ nhãn Action thẳng đứng
